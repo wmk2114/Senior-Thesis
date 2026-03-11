@@ -416,19 +416,6 @@ threshold_models_by_likert_outcome <- lapply(outcome_likert_names, function(outc
 
 names(threshold_models_by_likert_outcome) <- outcome_likert_names
 
-lapply(names(threshold_models_by_likert_outcome), function(outcome){
-  
-  stargazer(
-    threshold_models_by_likert_outcome[[outcome]],
-    title = paste("Logistic Models Across Likert Thresholds:", outcome),
-    omit = c("Caste", "Income", "Party", "Religion", "Gender", "Age", "Education"),
-    covariate.labels = c("NFU",
-                         "Identity Arguments",
-                         "NFU x Identity")
-  )
-  
-})
-
 ### REPEAT FOR REGRESSIONS WHERE WE INCLUDE NAs
 
 dep_na_dichot_thresholds <- colnames(survey_cleaned)[
@@ -451,6 +438,38 @@ threshold_models_by_na_outcome <- lapply(outcome_na_names, function(outcome){
 })
 
 names(threshold_models_by_na_outcome) <- outcome_na_names
+
+### STARGAZER TABLES
+base_outcomes <- sub("_Dichot_[1-6]$", "", model_order)
+
+outcome_labels <- c(
+  "Approve_Attack" = "Approve Nuclear Use",
+  "Prefer_Attack" = "Prefer Nuclear Use",
+  "Vote_Attack" = "Vote for Nuclear Use",
+  "Protest_Attack" = "Protest Against Nuclear Use",
+  "National_Identity_Attack" = "Nuclear Use Consistent with National Identity",
+  "Ahimsa_Attack" = "Nuclear Use Violates Ahimsa",
+  "Ethical_Attack" = "Nuclear Use is Ethical"
+)
+
+dep_labels <- outcome_labels[base_outcomes]
+
+test<-lapply(names(threshold_models_by_likert_outcome), function(outcome){
+  
+  stargazer(
+    threshold_models_by_likert_outcome[[outcome]],
+    title = paste("Logistic Models Across Likert Thresholds:", outcome_labels[outcome]),
+    dep.var.labels = outcome_labels[outcome],
+    omit = c("Caste", "Income", "Party", "Religion", "Gender", "Age", "Education"),
+    covariate.labels = c("NFU",
+                         "Identity Arguments",
+                         "NFU x Identity"),
+    column.labels = c(">1", ">2", ">3", ">4", ">5", ">6")
+  )
+  
+})
+
+test[[1]]
 
 lapply(names(threshold_models_by_na_outcome), function(outcome){
   
