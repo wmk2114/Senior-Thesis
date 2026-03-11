@@ -376,6 +376,95 @@ stargazer(log_regs_na_impute,
 # APPENDIX: SUPPLEMENTARY ANALYSIS
 ################################################################################
 
+### STEP 7: SUPPLEMENTARY ANALYSIS — LIKERT THRESHOLD DICHOTOMIZATIONS
+
+thresholds <- 1:6
+for (t in thresholds) {
+  survey_cleaned <- survey_cleaned %>%
+    
+    mutate(across(
+      .cols = all_of(ols_vars_likert_imputed),
+      ~ if_else(is.na(.x), NA, ifelse(.x <= t, 0, 1)),
+      .names = paste0("{.col}_Dichot_", t)
+    )) %>%
+    
+    mutate(across(
+      .cols = all_of(ols_vars_na_imputed),
+      ~ if_else(is.na(.x), NA, ifelse(.x <= t, 0, 1)),
+      .names = paste0("{.col}_Dichot_", t)
+    ))
+}
+
+dep_likert_dichot_thresholds <- colnames(survey_cleaned)[
+  grepl("LikertImputed_Dichot_[1-6]$", colnames(survey_cleaned))
+  ]
+
+log_regs_likert_thresholds <- lapply(
+  dep_likert_dichot_thresholds,
+  run_log_reg,
+  ind_vars = ind_vars,
+  data = survey_cleaned
+)
+
+model_likert_order<-unlist(lapply(log_regs_likert_thresholds, function(m) colnames(m$model)[1]))
+outcome_likert_names <- unique(sub("_Dichot_[1-6]$", "", model_likert_order))
+
+threshold_models_by_likert_outcome <- lapply(outcome_likert_names, function(outcome){
+  matches <- grepl(outcome, model_likert_order)
+  log_regs_likert_thresholds[matches]
+})
+
+names(threshold_models_by_likert_outcome) <- outcome_likert_names
+
+lapply(names(threshold_models_by_likert_outcome), function(outcome){
+  
+  stargazer(
+    threshold_models_by_likert_outcome[[outcome]],
+    title = paste("Logistic Models Across Likert Thresholds:", outcome),
+    omit = c("Caste", "Income", "Party", "Religion", "Gender", "Age", "Education"),
+    covariate.labels = c("NFU",
+                         "Identity Arguments",
+                         "NFU x Identity")
+  )
+  
+})
+
+### REPEAT FOR REGRESSIONS WHERE WE INCLUDE NAs
+
+dep_na_dichot_thresholds <- colnames(survey_cleaned)[
+  grepl("NAImputed_Dichot_[1-6]$", colnames(survey_cleaned))
+]
+
+log_regs_na_thresholds <- lapply(
+  dep_na_dichot_thresholds,
+  run_log_reg,
+  ind_vars = ind_vars,
+  data = survey_cleaned
+)
+
+model_na_order<-unlist(lapply(log_regs_na_thresholds, function(m) colnames(m$model)[1]))
+outcome_na_names <- unique(sub("_Dichot_[1-6]$", "", model_na_order))
+
+threshold_models_by_na_outcome <- lapply(outcome_na_names, function(outcome){
+  matches <- grepl(outcome, model_na_order)
+  log_regs_likert_thresholds[matches]
+})
+
+names(threshold_models_by_na_outcome) <- outcome_na_names
+
+lapply(names(threshold_models_by_na_outcome), function(outcome){
+  
+  stargazer(
+    threshold_models_by_na_outcome[[outcome]],
+    title = paste("Logistic Models Across Likert Thresholds:", outcome),
+    omit = c("Caste", "Income", "Party", "Religion", "Gender", "Age", "Education"),
+    covariate.labels = c("NFU",
+                         "Identity Arguments",
+                         "NFU x Identity")
+  )
+  
+})
+
 
 
 
