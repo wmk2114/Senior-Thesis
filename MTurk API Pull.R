@@ -10,8 +10,8 @@ library(reticulate)
 py_module_available("boto3")
 
 Sys.setenv(
-  AWS_ACCESS_KEY_ID = "AKIAWJUZA4GDE33ON3VT",
-  AWS_SECRET_ACCESS_KEY = "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",
+  AWS_ACCESS_KEY_ID = "xyz",
+  AWS_SECRET_ACCESS_KEY = "xyz",
   MTURK_SANDBOX = "TRUE"
 )
 
