@@ -1,27 +1,75 @@
-### DATA ANALYSIS
-### WE DON'T DO THAT: NATIONAL IDENTITY AND NUCLEAR NON-USE
+################################################################################
+### DATA ANALYSIS FOR WE DON'T DO THAT: NATIONAL IDENTITY AND NUCLEAR NON-USE
 ### SUBMISSION FOR DEPARTMENTAL HONORS
 ### COLUMBIA UNIVERSITY DEPARTMENT OF POLITICAL SCIENCE
 ### AUTHOR: WYATT KING
+################################################################################
 
-### STEP 0:  SET UP
+################################################################################
+# DISCLAIMER
+# ChatGPT was used to generate pseudocode for this analysis.
+# The pseudocode and documentation were subsequently edited
+# and reviewed by the author, Wyatt King.
+# All code was initially written by Wyatt, with occasional syntax issues being
+# fixed by ChatGPT.
+################################################################################
+
+################################################################################
+# STEP 0: ENVIRONMENT SETUP
+#
+# Pseudocode:
+#
+# 1. Clear the R workspace to remove previously stored objects.
+# 2. Load required R packages for data manipulation, statistical modeling,
+#    and regression table generation.
+# 3. Set the working directory to the project folder containing the dataset.
+# 4. Import the survey dataset from a .sav file.
+################################################################################
+
 rm(list = ls())
 library(tidyverse)
 library(haven)
 library(stargazer)
 library(glmnet)
 
-setwd("/Users/wyatttheking/Desktop/Columbia 2025/Senior Thesis/Data Analysis")
-survey<- read_sav("Test Responses.sav")
+setwd("~/Desktop/Columbia 2025/Senior Thesis/Data Analysis")
+survey<- read_sav("SIMULATED DATA.sav")
 
-### CLEAN
+
+################################################################################
+# STEP 1: DATA CLEANING
+#
+# Pseudocode:
+#
+# 1. Identify all dependent variables related to nuclear attack approval by
+#    selecting variables containing the string "_Attack".
+#
+# 2. Clean the dataset by performing the following operations:
+#       a. Convert the survey completion date to a standard date format.
+#       b. Remove responses submitted before March 11, 2026 (indicating simulated data).
+#       c. Remove metadata columns that are not relevant to the analysis.
+#
+# 3. Construct treatment indicators:
+#       - NFU treatment
+#       - National Identity treatment
+#
+# 4. Handle "Don't Know" responses (coded as 98) in two ways:
+#       a. Replace with the midpoint of the Likert scale (4).
+#       b. Replace with NA (missing).
+#
+# 5. Convert relevant demographic and treatment variables to factors.
+################################################################################
+
 dep_vars<- colnames(survey)[grepl("_Attack", colnames(survey))]
 survey_cleaned<- survey %>%
+  
+  # REMOVE EXTRANEOUS COLUMNS
+  
   mutate(Date= date(EndDate)) %>%
   filter(Date > mdy("02/15/2026")) %>%
   select(-c(1:19)) %>%
   
-  ### CLEAN COLUMNS FOR TREATMENTS
+  # FORMAT TREATMENT COLUMNS
   
   mutate(
     
@@ -35,8 +83,7 @@ survey_cleaned<- survey %>%
       Control_NI_Confirm | NFU_NI_Confirm ~ 1
     )) %>%
   
-  ### IMPUTATIONS
-  ### IMPUTE NA VALUES FOR RESPONDENTS WHO SAY DON'T KNOW
+  # CREATE NEW COLUMNS, IMPUTING VALUES OF 4 FOR RESPONDENTS WHO SAY DON'T KNOW
   
   mutate(across(
     .cols = all_of(dep_vars),
@@ -44,7 +91,7 @@ survey_cleaned<- survey %>%
     .names = "{.col}_LikertImputed"
   )) %>%
   
-  ### IMPUTE VALUES OF 4 FOR RESPONDENTS WHO SAY DON'T KNOW
+  # CREATE NEW COLUMNS, IMPUTING NA VALUES FOR RESPONDENTS WHO SAY DON'T KNOW
   
   mutate(across(
     .cols = all_of(dep_vars),
@@ -52,35 +99,64 @@ survey_cleaned<- survey %>%
     .names = "{.col}_NAImputed"
   )) %>%
   
+  # CONVERT RELEVANT COLUMNS TO FACTORS
+  
   mutate(across(.cols = c("Gender", "Party", "Caste", 
                           "Religion", "Income", "NFU", 
                           "National_Identity"), as.factor))
-  
-### ADD DICHOTOMIZED VARIABLES
-### DICHOTOMIZE FOR COLUMNS WITH IMPUTED NAS
+
+
+################################################################################
+# STEP 2: CREATE DICHOTOMIZED VARIABLES
+#
+# Pseudocode:
+#
+# 1. Generate binary outcome variables from Likert-scale responses.
+#
+# 2. For NA-imputed variables:
+#       - Keep NA values unchanged.
+#       - Assign 1 if response >= 4 (opposition or indifference to nuclear use).
+#       - Assign 0 if response < 4 (support for nuclear use).
+#
+# 3. Repeat the same dichotomization procedure for midpoint-imputed variables.
+################################################################################
 
 survey_cleaned<- survey_cleaned %>%
+  
+  ### DICHOTOMIZE FOR COLUMNS WITH IMPUTED NAS
   mutate(across(
     .cols = colnames(survey_cleaned)[grepl("_NAImputed",  colnames(survey_cleaned))],
-    ~ if_else(is.na(.x), NA, ifelse(.x >= 4, 1, 0)),
+    ~ if_else(is.na(.x), NA, if_else(.x >= 4, 1, 0)),
     .names = "{.col}_Dichot"
   )) %>%
   
   ### DICHOTOMIZE FOR COLUMNS WITH IMPUTED LIKERT
   mutate(across(
     .cols = colnames(survey_cleaned)[grepl("_LikertImputed",  colnames(survey_cleaned))],
-    ~ if_else(is.na(.x), NA, ifelse(.x >= 4, 1, 0)),
+    ~ if_else(is.na(.x), NA, if_else(.x >= 4, 1, 0)),
     .names = "{.col}_Dichot"
   ))
 
 
-### STEP 1: BUILD FUNCTIONS
-ind_vars<- c("Gender", "Age_1", "Party", "Education", "Religion", "Income", "Caste",
-             "NFU", "National_Identity", "NFU:National_Identity")
+################################################################################
+# STEP 3: CONSTRUCT OUTCOME INDICES
+#
+# Two index construction methods are used:
+#
+# 1. Inverse Covariance Weighting (ICW)
+# 2. Principal Components Analysis (PCA)
+#
+# Both indices are estimated using only respondents in the pure control group,
+# defined as observations where:
+#       NFU = 0
+#       National_Identity = 0
+################################################################################
 
-### OLS MODELS
 
-#### ICW
+################################################################################
+# ICW INDEX CONSTRUCTION
+################################################################################
+
 make_icw_index <- function(data, cols, treat_vars, new_var_name = "icw_index") {
   
   # outcome matrix
@@ -114,21 +190,33 @@ make_icw_index <- function(data, cols, treat_vars, new_var_name = "icw_index") {
   return(data)
 }
 
+ols_vars_likert_imputed<- colnames(survey_cleaned)[grepl("_LikertImputed", 
+                                                         colnames(survey_cleaned)) 
+                                                   & !grepl("_Dichot", colnames(survey_cleaned))]
+
+ols_vars_na_imputed<- colnames(survey_cleaned)[grepl("_NAImputed", 
+                                                         colnames(survey_cleaned)) 
+                                                   & !grepl("_Dichot", colnames(survey_cleaned))]
+
 survey_cleaned <- make_icw_index(
   data = survey_cleaned,
   cols = ols_vars_likert_imputed,
   treat_vars = c("NFU", "National_Identity"),
-  new_var_name = "attack_index_imputed_icw"
+  new_var_name = "attack_index_likert_icw"
 )
 
 survey_cleaned <- make_icw_index(
   data = survey_cleaned,
-  cols = dep_vars,
+  cols = ols_vars_na_imputed,
   treat_vars = c("NFU", "National_Identity"),
-  new_var_name = "attack_index_icw"
+  new_var_name = "attack_index_na_icw"
 )
 
-#### PCA
+
+################################################################################
+# PCA INDEX CONSTRUCTION
+################################################################################
+
 make_pca_index <- function(data, cols, treat_vars, new_var_name = "pca_index") {
   
   # outcome matrix
@@ -142,8 +230,10 @@ make_pca_index <- function(data, cols, treat_vars, new_var_name = "pca_index") {
   # identify pure control group
   control_rows <- apply(data[, treat_vars] == 0, 1, all)
   
+  control_complete <- control_rows & complete.cases(Y_std)
+  
   # estimate PCA on controls only
-  pca_model <- prcomp(Y_std[control_rows, ], center = FALSE, scale. = FALSE)
+  pca_model <- prcomp(Y_std[control_complete, ], center = FALSE, scale. = FALSE)
   
   # extract PC1 loadings
   weights <- pca_model$rotation[,1]
@@ -158,29 +248,61 @@ survey_cleaned <- make_pca_index(
   data = survey_cleaned,
   cols = ols_vars_likert_imputed,
   treat_vars = c("NFU", "National_Identity"),
-  new_var_name = "attack_index_imputed_pca"
+  new_var_name = "attack_index_likert_pca"
 )
 
 survey_cleaned <- make_pca_index(
   data = survey_cleaned,
-  cols = dep_vars,
+  cols = ols_vars_na_imputed,
   treat_vars = c("NFU", "National_Identity"),
-  new_var_name = "attack_index_pca"
+  new_var_name = "attack_index_na_pca"
 )
 
-icw_form <- as.formula(paste("attack_index_icw ~", paste(ind_vars, collapse = "+")))
-pca_form <- as.formula(paste("attack_index_pca ~", paste(ind_vars, collapse = "+")))
-icw_imputed_form <- as.formula(paste("attack_index_imputed_icw ~", paste(ind_vars, collapse = "+")))
-pca_imputed_form <- as.formula(paste("attack_index_imputed_pca ~", paste(ind_vars, collapse = "+")))
 
-icw_model <- lm(icw_form, data = survey_cleaned)
-pca_model <- lm(pca_form, data = survey_cleaned)
-icw_imputed_form <- lm(icw_form, data = survey_cleaned)
-pca_imputed_form <- lm(pca_form, data = survey_cleaned)
+################################################################################
+# STEP 4: OLS REGRESSION MODELS
+#
+# Pseudocode:
+#
+# 1. Define a set of demographic and treatment covariates.
+# 2. Construct regression formulas for ICW and PCA outcome indices.
+# 3. Estimate four OLS models:
+#       - ICW index
+#       - PCA index
+#       - ICW index with Likert imputation
+#       - PCA index with Likert imputation
+################################################################################
 
-ols_models<- list(icw_model, icw_imputed_form, pca_model, pca_imputed_form)
+ind_vars<- c("Gender", "Age_1", "Party", "Education", "Religion", "Income", "Caste",
+             "NFU", "National_Identity", "NFU:National_Identity")
 
-### LOGISTIC REGRESSIONS
+icw_likert_form <- as.formula(paste("attack_index_likert_icw ~", paste(ind_vars, collapse = "+")))
+pca_likert_form <- as.formula(paste("attack_index_likert_pca ~", paste(ind_vars, collapse = "+")))
+icw_na_form <- as.formula(paste("attack_index_na_icw ~", paste(ind_vars, collapse = "+")))
+pca_na_form <- as.formula(paste("attack_index_na_pca ~", paste(ind_vars, collapse = "+")))
+
+icw_likert_model <- lm(icw_likert_form, data = survey_cleaned)
+pca_likert_model <- lm(pca_likert_form, data = survey_cleaned)
+icw_na_model <- lm(icw_na_form, data = survey_cleaned)
+pca_na_model <- lm(pca_na_form, data = survey_cleaned)
+
+ols_models<- list(icw_likert_model, icw_na_model, pca_likert_model, pca_na_model)
+
+
+################################################################################
+# STEP 5: LOGISTIC REGRESSION MODELS
+#
+# Pseudocode:
+#
+# 1. Define a helper function that constructs and estimates logistic
+#    regression models.
+#
+# 2. Run logistic models for dichotomized outcomes with NA imputation.
+#
+# 3. Run logistic models for dichotomized outcomes with Likert midpoint
+#    imputation.
+################################################################################
+
 run_log_reg<-function(dep_var, ind_vars, data){
   rhs<-paste0(ind_vars, collapse = "+")
   lhs_rhs<- paste0(c(dep_var, rhs), collapse = "~")
@@ -189,8 +311,9 @@ run_log_reg<-function(dep_var, ind_vars, data){
   return(log_model)
 }
 
-### RUN LOGISTIC REGRESSION MODELS USING IMPUTED NAs
-dep_dichot_na_impute<- colnames(survey_cleaned)[grepl("_NAImputed_Dichot", colnames(survey_cleaned))]
+dep_dichot_na_impute<- colnames(survey_cleaned)[
+  grepl("_NAImputed_Dichot", colnames(survey_cleaned))
+  ]
 
 log_regs_na_impute <- lapply(
   dep_dichot_na_impute,
@@ -199,8 +322,10 @@ log_regs_na_impute <- lapply(
   data = survey_cleaned
 )
 
-### RUN LOGISTIC REGRESSION MODELS USING LIKERT IMPUTED
-dep_dichot_likert_impute<- colnames(survey_cleaned)[grepl("_LikertImputed_Dichot", colnames(survey_cleaned))]
+dep_dichot_likert_impute<- colnames(survey_cleaned)[
+  grepl("_LikertImputed_Dichot", colnames(survey_cleaned))
+  ]
+
 log_regs_likert_impute <- lapply(
   dep_dichot_likert_impute,
   run_log_reg,
@@ -208,7 +333,10 @@ log_regs_likert_impute <- lapply(
   data = survey_cleaned
 )
 
-### TABULAR OUTPUTS
+
+################################################################################
+# STEP 6: GENERATE REGRESSION TABLES
+################################################################################
 
 stargazer(ols_models,
           title = "OLS Models",
@@ -242,6 +370,11 @@ stargazer(log_regs_na_impute,
           notes = c("Fixed effects for caste, education, income, party, religion, gender, and age included but not shown",
                     "* p<0.1; ** p<0.05; *** p<0.01"),
           notes.append = FALSE)
+
+
+################################################################################
+# APPENDIX: SUPPLEMENTARY ANALYSIS
+################################################################################
 
 
 
